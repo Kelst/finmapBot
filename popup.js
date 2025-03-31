@@ -40,18 +40,71 @@ document.addEventListener('DOMContentLoaded', function() {
           return;
         }
         
-        // Send message to content script
+        // Отримуємо значення вибраного періоду
+        const periodType = periodSelect.value;
+        const startDate = document.getElementById('startDate').value;
+        const endDate = document.getElementById('endDate').value;
+        
+        // Валідація дат для користувацького періоду
+        if (periodType === 'custom') {
+          if (!startDate || !endDate) {
+            addStatusMessage('Помилка: Виберіть початкову та кінцеву дати', 'error');
+            runButton.disabled = false;
+            return;
+          }
+          
+          const startDateObj = new Date(startDate);
+          const endDateObj = new Date(endDate);
+          
+          if (endDateObj < startDateObj) {
+            addStatusMessage('Помилка: Кінцева дата не може бути раніше за початкову', 'error');
+            runButton.disabled = false;
+            return;
+          }
+        }
+        
+        // Спочатку відправляємо запит на встановлення "За весь час"
         chrome.tabs.sendMessage(
           tabs[0].id,
           { 
             action: "selectAllTime",
-            periodType: periodSelect.value,
-            startDate: document.getElementById('startDate').value,
-            endDate: document.getElementById('endDate').value
+            periodType: periodType,
+            startDate: startDate,
+            endDate: endDate
           },
           function(response) {
             if (response && response.status === 'started') {
-              addStatusMessage('Операція розпочата на сторінці', 'pending');
+              addStatusMessage('Встановлюємо "За весь час"...', 'pending');
+              
+              // Після успішної відповіді слухаємо статус операції
+              let statusListener = function(message, sender, sendResponse) {
+                if (message.type === 'status' && message.done) {
+                  // Коли операція "За весь час" завершена, починаємо фільтрацію
+                  chrome.runtime.onMessage.removeListener(statusListener);
+                  
+                  // Відправляємо запит на фільтрацію за датою
+                  chrome.tabs.sendMessage(
+                    tabs[0].id,
+                    { 
+                      action: "filterByDate",
+                      periodType: periodType,
+                      startDate: startDate,
+                      endDate: endDate
+                    },
+                    function(response) {
+                      if (response && response.status === 'started') {
+                        addStatusMessage('Починаємо фільтрацію за датою...', 'pending');
+                      } else {
+                        addStatusMessage('Помилка: Не вдалося зв\'язатися з сторінкою для фільтрації', 'error');
+                        runButton.disabled = false;
+                      }
+                    }
+                  );
+                }
+              };
+              
+              chrome.runtime.onMessage.addListener(statusListener);
+              
             } else {
               addStatusMessage('Помилка: Не вдалося зв\'язатися з сторінкою', 'error');
               runButton.disabled = false;
@@ -69,6 +122,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (message.status === 'success' && message.done) {
           runButton.disabled = false;
         } else if (message.status === 'error') {
+          runButton.disabled = false;
+        } else if (message.status === 'warning' && message.done) {
           runButton.disabled = false;
         }
       }
