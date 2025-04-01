@@ -2,6 +2,8 @@
 document.addEventListener('DOMContentLoaded', function() {
     const periodSelect = document.getElementById('periodSelect');
     const customDateInputs = document.getElementById('customDateInputs');
+    const findCashWithdrawalsCheckbox = document.getElementById('findCashWithdrawals');
+    const cashWithdrawalOptions = document.getElementById('cashWithdrawalOptions');
     const runButton = document.getElementById('runButton');
     const statusContainer = document.getElementById('statusContainer');
     
@@ -17,6 +19,11 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         customDateInputs.style.display = 'none';
       }
+    });
+    
+    // Show/hide cash withdrawal options
+    findCashWithdrawalsCheckbox.addEventListener('change', function() {
+      cashWithdrawalOptions.style.display = this.checked ? 'block' : 'none';
     });
     
     // Run button click handler
@@ -45,6 +52,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const startDate = document.getElementById('startDate').value;
         const endDate = document.getElementById('endDate').value;
         
+        // Отримуємо значення опцій зняття готівки
+        const findCashWithdrawals = findCashWithdrawalsCheckbox.checked;
+        const cashWithdrawalText = document.getElementById('cashWithdrawalText').value.trim();
+        
         // Валідація дат для користувацького періоду
         if (periodType === 'custom') {
           if (!startDate || !endDate) {
@@ -63,14 +74,18 @@ document.addEventListener('DOMContentLoaded', function() {
           }
         }
         
+        // Валідація тексту для пошуку зняття готівки
+        if (findCashWithdrawals && !cashWithdrawalText) {
+          addStatusMessage('Помилка: Введіть текст для пошуку зняття готівки', 'error');
+          runButton.disabled = false;
+          return;
+        }
+        
         // Спочатку відправляємо запит на встановлення "За весь час"
         chrome.tabs.sendMessage(
           tabs[0].id,
           { 
-            action: "selectAllTime",
-            periodType: periodType,
-            startDate: startDate,
-            endDate: endDate
+            action: "selectAllTime"
           },
           function(response) {
             if (response && response.status === 'started') {
@@ -79,21 +94,27 @@ document.addEventListener('DOMContentLoaded', function() {
               // Після успішної відповіді слухаємо статус операції
               let statusListener = function(message, sender, sendResponse) {
                 if (message.type === 'status' && message.done) {
-                  // Коли операція "За весь час" завершена, починаємо фільтрацію
+                  //// Коли операція "За весь час" завершена, починаємо фільтрацію
                   chrome.runtime.onMessage.removeListener(statusListener);
                   
-                  // Відправляємо запит на фільтрацію за датою
+                  // Відправляємо запит на фільтрацію за датою з опцією пошуку зняття готівки
                   chrome.tabs.sendMessage(
                     tabs[0].id,
                     { 
                       action: "filterByDate",
                       periodType: periodType,
                       startDate: startDate,
-                      endDate: endDate
+                      endDate: endDate,
+                      findCashWithdrawals: findCashWithdrawals,
+                      cashWithdrawalText: cashWithdrawalText
                     },
                     function(response) {
                       if (response && response.status === 'started') {
-                        addStatusMessage('Починаємо фільтрацію за датою...', 'pending');
+                        if (findCashWithdrawals) {
+                          addStatusMessage('Починаємо фільтрацію за датою та пошук зняття готівки...', 'pending');
+                        } else {
+                          addStatusMessage('Починаємо фільтрацію за датою...', 'pending');
+                        }
                       } else {
                         addStatusMessage('Помилка: Не вдалося зв\'язатися з сторінкою для фільтрації', 'error');
                         runButton.disabled = false;

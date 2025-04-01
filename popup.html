@@ -38,7 +38,7 @@
       color: #555;
     }
     
-    select, input[type="date"] {
+    select, input[type="date"], input[type="text"] {
       width: 100%;
       padding: 8px 12px;
       border: 1px solid #ddd;
@@ -73,6 +73,7 @@
       font-size: 15px;
       font-weight: 500;
       transition: background-color 0.2s;
+      margin-bottom: 8px;
     }
     
     button:hover {
@@ -131,10 +132,38 @@
       height: auto;
     }
     
-    .action-select {
+    .section {
       margin-bottom: 16px;
       padding-bottom: 16px;
       border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .section-title {
+      font-size: 15px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      color: #34495e;
+    }
+    
+    .checkbox-group {
+      margin-top: 12px;
+    }
+    
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      font-weight: normal;
+      cursor: pointer;
+    }
+    
+    .checkbox-label input {
+      margin-right: 8px;
+    }
+    
+    #cashWithdrawalOptions {
+      margin-top: 8px;
+      padding-left: 24px;
+      display: none;
     }
   </style>
 </head>
@@ -145,27 +174,43 @@
     </div>
     <h1>Finmap Bot</h1>
     
-    <!-- Видалено вибір дії, оскільки завжди виконуються обидві операції -->
-    <div class="info-text">
-      <p>Спочатку буде встановлено "За весь час", потім відбудеться фільтрація за датою.</p>
-    </div>
-    
-    <div class="form-group" id="periodSelectGroup">
-      <label for="periodSelect">Вибрати період:</label>
-      <select id="periodSelect">
-        <option value="yesterday">Попередній день</option>
-        <option value="custom">Вибрати інший період</option>
-      </select>
+    <div class="section">
+      <div class="section-title">Фільтрація транзакцій за датою</div>
       
-      <div id="customDateInputs">
-        <div class="date-container">
-          <input type="date" id="startDate" name="startDate">
-          <input type="date" id="endDate" name="endDate">
+      <div class="info-text">
+        <p>Спочатку буде встановлено "За весь час", потім відбудеться фільтрація за датою.</p>
+      </div>
+      
+      <div class="form-group" id="periodSelectGroup">
+        <label for="periodSelect">Вибрати період:</label>
+        <select id="periodSelect">
+          <option value="yesterday">Попередній день</option>
+          <option value="custom">Вибрати інший період</option>
+        </select>
+        
+        <div id="customDateInputs">
+          <div class="date-container">
+            <input type="date" id="startDate" name="startDate">
+            <input type="date" id="endDate" name="endDate">
+          </div>
         </div>
       </div>
+      
+      <div class="checkbox-group">
+        <label class="checkbox-label">
+          <input type="checkbox" id="findCashWithdrawals"> Виділяти зняття готівки
+        </label>
+        
+        <div id="cashWithdrawalOptions">
+          <div class="form-group">
+            <label for="cashWithdrawalText">Текст для пошуку:</label>
+            <input type="text" id="cashWithdrawalText" value="Зняття готівки: Банкомат" placeholder="Введіть текст для пошуку">
+          </div>
+        </div>
+      </div>
+      
+      <button id="runButton">Запустити</button>
     </div>
-    
-    <button id="runButton">Запустити</button>
     
     <div class="status" id="statusContainer">
       <div class="status-item">Готовий до запуску</div>
