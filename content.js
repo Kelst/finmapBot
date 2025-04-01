@@ -222,11 +222,12 @@ function getYesterday() {
 }
 
 // Функція для фільтрації та прокрутки списку за датою
+// Function to filter and scroll the list by date with unique element tracking
 async function filterByDate(periodType, startDate, endDate) {
   try {
     sendStatus('Початок фільтрації за датою...', 'pending');
     
-    // Встановлюємо дати на основі типу періоду
+    // Set dates based on period type
     let filterStartDate = null;
     let filterEndDate = null;
     
@@ -241,10 +242,10 @@ async function filterByDate(periodType, startDate, endDate) {
       sendStatus(`Фільтрація за період: ${filterStartDate?.toLocaleDateString('uk-UA') || 'початок'} - ${filterEndDate?.toLocaleDateString('uk-UA') || 'кінець'}`, 'pending');
     }
     
-    // Завантажуємо всі транзакції, прокручуючи до кінця списку кілька разів
+    // Load all transactions by scrolling to the end of the list multiple times
     await loadAllTransactions();
     
-    // Знаходимо всі видимі транзакції
+    // Find all visible transactions
     const rows = document.querySelectorAll('.cypress-log-row');
     if (rows.length === 0) {
       sendStatus('Помилка: Записи транзакцій не знайдено', 'error');
@@ -253,7 +254,10 @@ async function filterByDate(periodType, startDate, endDate) {
     
     sendStatus(`Знайдено ${rows.length} транзакцій в поточному відображенні`, 'success');
     
-    // Додаємо стиль для підсвічування до документа, якщо його ще немає
+    // Create an array to store unique matching transactions
+    const matchingTransactions = new Set();
+    
+    // Add style for highlighting to the document, if it doesn't exist yet
     if (!document.getElementById('finmap-bot-highlight-style')) {
       const style = document.createElement('style');
       style.id = 'finmap-bot-highlight-style';
@@ -270,20 +274,20 @@ async function filterByDate(periodType, startDate, endDate) {
       document.head.appendChild(style);
     }
     
-    // Прокручуємо до першої знайденої транзакції
+    // Find the scroll container
     const scrollContainer = document.querySelector('.ReactVirtualized__Grid');
     if (!scrollContainer) {
       sendStatus('Помилка: Не вдалося знайти контейнер для прокрутки', 'error');
       return;
     }
     
-    // Використовуємо альтернативний метод для прокрутки до елемента в віртуалізованому списку
+    // Set up scrolling interval and variables
     let scrollInterval;
     let scrollAttempts = 0;
-    const maxScrollAttempts = 100; // Збільшуємо кількість спроб
+    const maxScrollAttempts = 100;
     let foundFirstMatch = false;
     
-    // Функція для скасування автоматичної прокрутки
+    // Function to cancel automatic scrolling
     function stopScrolling() {
       if (scrollInterval) {
         clearInterval(scrollInterval);
@@ -291,7 +295,7 @@ async function filterByDate(periodType, startDate, endDate) {
       }
     }
     
-    // Додаємо кнопку для зупинки прокрутки
+    // Add button to stop scrolling
     const stopButton = document.createElement('button');
     stopButton.textContent = 'Зупинити пошук';
     stopButton.style.position = 'fixed';
@@ -308,34 +312,41 @@ async function filterByDate(periodType, startDate, endDate) {
     stopButton.addEventListener('click', () => {
       stopScrolling();
       document.body.removeChild(stopButton);
-      sendStatus('Пошук зупинено користувачем', 'warning', true);
+      sendStatus(`Пошук зупинено користувачем. Знайдено ${matchingTransactions.size} унікальних транзакцій`, 'warning', true);
     });
     
     document.body.appendChild(stopButton);
     
-    // Швидко прокручуємо вгору, щоб почати пошук з початку списку
+    // Quickly scroll to the top to start searching from the beginning of the list
     scrollContainer.scrollTo({ top: 0, behavior: 'auto' });
     await sleep(500);
     
-    // Лічильник знайдених транзакцій
-    let matchCount = 0;
     let lastMatchDate = null;
     let foundOutOfRangeDate = false;
     
-    // Функція для пошуку та підсвічування транзакцій
+    // Function to find and highlight transactions
     function findAndHighlightTransactions() {
-      // Оновлюємо список видимих рядків
+      // Update the list of visible rows
       const visibleRows = document.querySelectorAll('.cypress-log-row');
       let currentRowsFound = 0;
       let outOfRangeFound = false;
       
-      // Для кожного рядка
+      // For each row
       for (const row of visibleRows) {
-        // Отримуємо елемент з датою
+        // Get a unique identifier for this row (e.g., combination of attributes)
+        // This helps prevent double-counting the same transaction
+        const rowId = getUniqueRowId(row);
+        
+        // Skip if we've already processed this row
+        if (matchingTransactions.has(rowId)) {
+          continue;
+        }
+        
+        // Get the date element
         const dateElements = row.querySelectorAll('p');
         let dateText = '';
         
-        // Шукаємо текст, який виглядає як дата
+        // Find text that looks like a date
         for (const element of dateElements) {
           const text = element.textContent.trim();
           if (/^\d{1,2}\s+[а-яіїє]{3}\s+\d{4}$/i.test(text)) {
@@ -346,76 +357,76 @@ async function filterByDate(periodType, startDate, endDate) {
         
         if (!dateText) continue;
         
-        // Парсимо дату для перевірки
+        // Parse the date for verification
         const rowDate = parseFinmapDate(dateText);
         if (!rowDate) continue;
         
-        // Перевіряємо, чи дата входить у діапазон
+        // Check if the date is in range
         const inRange = isDateInRange(dateText, filterStartDate, filterEndDate);
         
         if (inRange) {
-          // Підсвічуємо знайдений рядок
+          // Highlight the found row
           row.classList.add('finmap-bot-highlight');
+          
+          // Add to our set of matching transactions
+          matchingTransactions.add(rowId);
           currentRowsFound++;
           
           if (!foundFirstMatch) {
             foundFirstMatch = true;
             sendStatus(`Знайдено першу транзакцію за ${dateText}`, 'success');
-            // Відмічаємо останню знайдену дату
             lastMatchDate = rowDate;
           }
-        } else if (foundFirstMatch) {
-          // Якщо це дата, яка виходить за діапазон і ми вже знайшли першу відповідну транзакцію
           
-          // Перевіряємо, чи ця дата старіша за останню знайдену в діапазоні
-          // Коли ми рухаємось вниз списку, дати стають старішими
+          // Update the counter in real-time
+          sendStatus(`Знайдено ${matchingTransactions.size} унікальних транзакцій...`, 'pending');
+        } else if (foundFirstMatch) {
+          // If this date is out of range and we've already found the first matching transaction
+          
+          // Check if this date is older than the last found matching date
           if (lastMatchDate && rowDate < lastMatchDate) {
             row.classList.add('finmap-bot-out-of-range');
             outOfRangeFound = true;
             foundOutOfRangeDate = true;
             
-            // Зупиняємо прокрутку, бо знайшли дату поза діапазоном
+            // Stop scrolling because we found a date outside the range
             stopScrolling();
             document.body.removeChild(stopButton);
-            sendStatus(`Знайдено ${matchCount} транзакцій за вказаний період, досягнуто кінця діапазону`, 'success', true);
+            sendStatus(`Знайдено ${matchingTransactions.size} унікальних транзакцій за вказаний період, досягнуто кінця діапазону`, 'success', true);
             break;
           }
         }
       }
       
-      // Оновлюємо загальний лічильник знайдених транзакцій
-      matchCount += currentRowsFound;
-      
-      // Якщо знайдено дати поза діапазоном, припиняємо пошук
+      // If we found dates outside the range, stop searching
       if (outOfRangeFound) {
         return;
       }
       
-      // Якщо в поточному вікні знайдено транзакції в діапазоні, але не знайдено поза діапазоном, прокручуємо далі
+      // If current window found transactions in range, but none out of range, scroll further
       if (currentRowsFound > 0) {
-        // Прокручуємо вниз до наступної порції транзакцій
         scrollContainer.scrollBy({ top: 300, behavior: 'smooth' });
-        scrollAttempts = 0; // Скидаємо лічильник спроб, бо ми на правильному шляху
+        scrollAttempts = 0; // Reset attempt counter since we're on the right track
       } else {
-        // Якщо в поточному вікні не знайдено транзакцій в діапазоні, перевіряємо, чи ми вже щось знайшли раніше
+        // If no transactions found in the current window, check if we found any earlier
         if (foundFirstMatch) {
-          // Якщо раніше знаходили, але зараз не знаходимо, і не знайшли дати поза діапазоном,
-          // продовжуємо гортати, щоб знайти або більше потрібних транзакцій, або дати поза діапазоном
+          // If we found some earlier but none now, and no out-of-range dates,
+          // continue scrolling to find more or reach out-of-range dates
           scrollContainer.scrollBy({ top: 300, behavior: 'smooth' });
           scrollAttempts++;
         } else {
-          // Якщо ще не знайшли жодної транзакції в діапазоні, продовжуємо шукати
+          // If we haven't found any transactions in range yet, keep looking
           scrollContainer.scrollBy({ top: 300, behavior: 'smooth' });
           scrollAttempts++;
         }
         
-        // Перевіряємо, чи не досягли ми ліміту спроб
+        // Check if we've reached the attempt limit
         if (scrollAttempts >= maxScrollAttempts) {
           stopScrolling();
           document.body.removeChild(stopButton);
           
-          if (matchCount > 0) {
-            sendStatus(`Знайдено ${matchCount} транзакцій за вказаний період, досягнуто кінця списку`, 'success', true);
+          if (matchingTransactions.size > 0) {
+            sendStatus(`Знайдено ${matchingTransactions.size} унікальних транзакцій за вказаний період, досягнуто кінця списку`, 'success', true);
           } else {
             sendStatus('Транзакцій за вказаний період не знайдено', 'warning', true);
           }
@@ -423,16 +434,16 @@ async function filterByDate(periodType, startDate, endDate) {
         }
       }
       
-      // Перевіряємо, чи змінилася позиція прокрутки
+      // Check if the scroll position changed
       const currentScrollTop = scrollContainer.scrollTop;
       setTimeout(() => {
         if (scrollInterval && scrollContainer.scrollTop === currentScrollTop) {
-          // Якщо позиція не змінилася, можливо, ми досягли кінця списку
+          // If position didn't change, we might have reached the end of the list
           stopScrolling();
           document.body.removeChild(stopButton);
           
-          if (matchCount > 0) {
-            sendStatus(`Знайдено ${matchCount} транзакцій за вказаний період, досягнуто кінця списку`, 'success', true);
+          if (matchingTransactions.size > 0) {
+            sendStatus(`Знайдено ${matchingTransactions.size} унікальних транзакцій за вказаний період, досягнуто кінця списку`, 'success', true);
           } else {
             sendStatus('Транзакцій за вказаний період не знайдено', 'warning', true);
           }
@@ -440,17 +451,17 @@ async function filterByDate(periodType, startDate, endDate) {
       }, 500);
     }
     
-    // Запускаємо інтервал для прокрутки та пошуку
+    // Start interval for scrolling and searching
     scrollInterval = setInterval(findAndHighlightTransactions, 1000);
     
-    // Виконуємо перший пошук одразу
+    // Run first search immediately
     findAndHighlightTransactions();
     
   } catch (error) {
     console.error("Error in filterByDate:", error);
     sendStatus(`Помилка фільтрації: ${error.message}`, 'error');
     
-    // Прибираємо кнопку зупинки, якщо вона є
+    // Remove the stop button if it exists
     const stopButton = document.querySelector('button[style*="position: fixed"]');
     if (stopButton) {
       document.body.removeChild(stopButton);
@@ -458,6 +469,25 @@ async function filterByDate(periodType, startDate, endDate) {
   }
 }
 
+// Function to get a unique ID for a row
+function getUniqueRowId(row) {
+  // Get all text content from the row to create a unique fingerprint
+  const allTexts = Array.from(row.querySelectorAll('p, span'))
+    .map(el => el.textContent.trim())
+    .filter(text => text.length > 0)
+    .join('|');
+  
+  // Add any data attributes if they exist
+  const dataAttrs = [];
+  for (const attr of row.attributes) {
+    if (attr.name.startsWith('data-')) {
+      dataAttrs.push(`${attr.name}=${attr.value}`);
+    }
+  }
+  
+  // Combine text content with data attributes for a unique ID
+  return `${allTexts}|${dataAttrs.join('|')}`;
+}
 // Функція для завантаження всіх транзакцій шляхом прокрутки до кінця списку
 async function loadAllTransactions() {
   try {
