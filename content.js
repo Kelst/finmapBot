@@ -6,6 +6,8 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 // Функція для створення та відображення таблиці знайдених транзакцій
+// Покращена функція для створення та відображення таблиці знайдених транзакцій
+// Покращена функція для створення та відображення таблиці знайдених транзакцій
 function showCashWithdrawalTable(transactions, total, searchText) {
   // Перевіряємо, чи є що показувати
   if (!transactions || transactions.length === 0) return;
@@ -66,6 +68,74 @@ function showCashWithdrawalTable(transactions, total, searchText) {
   header.appendChild(closeButton);
   tableContainer.appendChild(header);
   
+  // Обробляємо транзакції - видаляємо дублікати і отримуємо додаткову інформацію
+  const processedTransactions = [];
+  const uniqueKeys = new Set();
+  
+  // Функція для витягування інформації з коментаря
+  function parseComment(comment) {
+    const result = {
+      cardNumber: '',
+      dateTime: '',
+      time: '',
+      location: '',
+      atm: ''
+    };
+    
+    // Витягуємо номер картки
+    const cardMatch = comment.match(/(\d{4})\s+\*{4}\s+\*{4}\s+(\d{4})/);
+    if (cardMatch) {
+      result.cardNumber = `${cardMatch[1]}...${cardMatch[2]}`;
+    }
+    
+    // Витягуємо дату і час
+    const dateTimeMatch = comment.match(/(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2}:\d{2})/);
+    if (dateTimeMatch) {
+      result.dateTime = dateTimeMatch[0];
+      result.time = dateTimeMatch[2];
+    }
+    
+    // Витягуємо місце зняття (АТМ та місто)
+    const atmMatch = comment.match(/Банкомат\s+([^,]+)/);
+    if (atmMatch) {
+      result.atm = atmMatch[1].trim();
+    }
+    
+    const cityMatch = comment.match(/М\s+([^,]+)/);
+    if (cityMatch) {
+      result.location = cityMatch[1].trim();
+    }
+    
+    return result;
+  }
+  
+  // Обробляємо кожну транзакцію
+  transactions.forEach(transaction => {
+    // Витягуємо додаткову інформацію з коментаря
+    const parsedInfo = parseComment(transaction.comment || '');
+    
+    // Створюємо унікальний ключ для дедуплікації
+    const uniqueKey = `${parsedInfo.cardNumber}-${parsedInfo.dateTime}-${transaction.amount.toFixed(2)}`;
+    
+    // Перевіряємо, чи вже є така транзакція
+    if (!uniqueKeys.has(uniqueKey)) {
+      uniqueKeys.add(uniqueKey);
+      
+      // Додаємо транзакцію з додатковою інформацією
+      processedTransactions.push({
+        ...transaction,
+        cardNumber: parsedInfo.cardNumber,
+        time: parsedInfo.time,
+        atm: parsedInfo.atm,
+        location: parsedInfo.location,
+        uniqueKey: uniqueKey
+      });
+    }
+  });
+  
+  // Перераховуємо загальну суму на основі унікальних транзакцій
+  const actualTotal = processedTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+  
   // Інформація про пошук
   const searchInfo = document.createElement('div');
   searchInfo.style.marginBottom = '15px';
@@ -73,40 +143,213 @@ function showCashWithdrawalTable(transactions, total, searchText) {
   searchInfo.style.color = '#666';
   searchInfo.innerHTML = `
     <div>Пошуковий текст: <strong>${searchText}</strong></div>
-    <div>Знайдено транзакцій: <strong>${transactions.length}</strong></div>
-    <div>Загальна сума: <strong>${total.toFixed(2)} грн</strong></div>
+    <div>Знайдено унікальних транзакцій: <strong>${processedTransactions.length}</strong></div>
+    <div>Загальна сума: <strong>${actualTotal.toFixed(2)} грн</strong></div>
   `;
   tableContainer.appendChild(searchInfo);
   
-  // Створюємо таблицю
-  const table = document.createElement('table');
-  table.style.width = '100%';
-  table.style.borderCollapse = 'collapse';
-  table.style.fontSize = '14px';
+  // Додаємо статистику за картками
+  const cardStats = {};
+  processedTransactions.forEach(transaction => {
+    const card = transaction.cardNumber || 'Невідома картка';
+    if (!cardStats[card]) {
+      cardStats[card] = {
+        count: 0,
+        total: 0
+      };
+    }
+    cardStats[card].count++;
+    cardStats[card].total += transaction.amount;
+  });
   
-  // Заголовок таблиці
-  const thead = document.createElement('thead');
-  thead.innerHTML = `
-    <tr>
-      <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd; background-color: #f5f5f5;">№</th>
-      <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd; background-color: #f5f5f5;">Дата</th>
-      <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd; background-color: #f5f5f5;">Сума (грн)</th>
-      <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd; background-color: #f5f5f5;">Коментар</th>
-    </tr>
+  // Створюємо блок зі статистикою
+  const statsDiv = document.createElement('div');
+  statsDiv.style.marginBottom = '20px';
+  statsDiv.style.padding = '10px';
+  statsDiv.style.backgroundColor = '#f5f5f5';
+  statsDiv.style.borderRadius = '4px';
+  statsDiv.style.fontSize = '14px';
+  
+  let statsHTML = '<div style="font-weight:bold;margin-bottom:5px;">Статистика за картками:</div><table style="width:100%;border-collapse:collapse;">';
+  statsHTML += '<tr style="border-bottom:1px solid #ddd;"><th style="text-align:left;padding:4px;">Картка</th><th style="text-align:right;padding:4px;">К-ть операцій</th><th style="text-align:right;padding:4px;">Сума (грн)</th></tr>';
+  
+  Object.keys(cardStats).forEach(card => {
+    statsHTML += `<tr>
+      <td style="padding:4px;">${card}</td>
+      <td style="text-align:right;padding:4px;">${cardStats[card].count}</td>
+      <td style="text-align:right;padding:4px;font-weight:bold;">${cardStats[card].total.toFixed(2)}</td>
+    </tr>`;
+  });
+  
+  statsHTML += '</table>';
+  statsDiv.innerHTML = statsHTML;
+  tableContainer.appendChild(statsDiv);
+  
+  // Додаємо селектор для групування
+  const groupingDiv = document.createElement('div');
+  groupingDiv.style.marginBottom = '15px';
+  groupingDiv.style.display = 'flex';
+  groupingDiv.style.alignItems = 'center';
+  groupingDiv.style.gap = '10px';
+  
+  const groupLabel = document.createElement('label');
+  groupLabel.textContent = 'Групувати за:';
+  groupLabel.style.fontSize = '14px';
+  
+  const groupSelect = document.createElement('select');
+  groupSelect.innerHTML = `
+    <option value="none">Без групування</option>
+    <option value="card">Номером картки</option>
+    <option value="date">Датою</option>
+    <option value="location">Місцем зняття</option>
+    <option value="atm">Банкоматом</option>
   `;
-  table.appendChild(thead);
+  groupSelect.style.padding = '5px';
+  groupSelect.style.borderRadius = '4px';
+  groupSelect.style.border = '1px solid #ddd';
   
-  // Тіло таблиці
-  const tbody = document.createElement('tbody');
+  groupingDiv.appendChild(groupLabel);
+  groupingDiv.appendChild(groupSelect);
+  tableContainer.appendChild(groupingDiv);
   
-  // Додаємо рядки таблиці
-  transactions.forEach((transaction, index) => {
+  // Створюємо таблицю
+  const tableWrapper = document.createElement('div');
+  tableWrapper.id = 'finmap-table-wrapper';
+  tableWrapper.style.overflow = 'auto';
+  tableContainer.appendChild(tableWrapper);
+  
+  // Функція для рендерингу таблиці з групуванням або без
+  function renderTable(groupBy = 'none') {
+    const table = document.createElement('table');
+    table.id = 'finmap-withdrawal-table';
+    table.style.width = '100%';
+    table.style.borderCollapse = 'collapse';
+    table.style.fontSize = '14px';
+    
+    // Заголовок таблиці
+    const thead = document.createElement('thead');
+    thead.innerHTML = `
+      <tr>
+        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd; background-color: #f5f5f5;">№</th>
+        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd; background-color: #f5f5f5;">Дата</th>
+        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd; background-color: #f5f5f5;">Час</th>
+        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd; background-color: #f5f5f5;">Картка</th>
+        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd; background-color: #f5f5f5;">Місце</th>
+        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd; background-color: #f5f5f5;">Сума (грн)</th>
+      </tr>
+    `;
+    table.appendChild(thead);
+    
+    // Тіло таблиці
+    const tbody = document.createElement('tbody');
+    
+    if (groupBy === 'none') {
+      // Без групування
+      processedTransactions.forEach((transaction, index) => {
+        const row = createTransactionRow(transaction, index + 1);
+        tbody.appendChild(row);
+      });
+    } else {
+      // З групуванням
+      const groups = {};
+      
+      processedTransactions.forEach(transaction => {
+        let groupKey = '';
+        
+        switch (groupBy) {
+          case 'card':
+            groupKey = transaction.cardNumber || 'Невідома картка';
+            break;
+          case 'date':
+            groupKey = transaction.date || 'Невідома дата';
+            break;
+          case 'location':
+            groupKey = transaction.location || 'Невідоме місце';
+            break;
+          case 'atm':
+            groupKey = transaction.atm || 'Невідомий банкомат';
+            break;
+        }
+        
+        if (!groups[groupKey]) {
+          groups[groupKey] = {
+            transactions: [],
+            total: 0
+          };
+        }
+        
+        groups[groupKey].transactions.push(transaction);
+        groups[groupKey].total += transaction.amount;
+      });
+      
+      // Виводимо групи
+      let rowCounter = 1;
+      Object.keys(groups).sort().forEach(groupKey => {
+        const group = groups[groupKey];
+        
+        // Заголовок групи
+        const groupRow = document.createElement('tr');
+        groupRow.style.backgroundColor = '#e3f2fd';
+        
+        const groupHeaderCell = document.createElement('td');
+        groupHeaderCell.colSpan = 5;
+        groupHeaderCell.style.padding = '10px';
+        groupHeaderCell.style.fontWeight = 'bold';
+        groupHeaderCell.textContent = `${getGroupLabel(groupBy)}: ${groupKey}`;
+        
+        const groupTotalCell = document.createElement('td');
+        groupTotalCell.style.padding = '10px';
+        groupTotalCell.style.textAlign = 'right';
+        groupTotalCell.style.fontWeight = 'bold';
+        groupTotalCell.textContent = group.total.toFixed(2);
+        
+        groupRow.appendChild(groupHeaderCell);
+        groupRow.appendChild(groupTotalCell);
+        tbody.appendChild(groupRow);
+        
+        // Транзакції групи
+        group.transactions.forEach(transaction => {
+          const row = createTransactionRow(transaction, rowCounter);
+          tbody.appendChild(row);
+          rowCounter++;
+        });
+      });
+    }
+    
+    table.appendChild(tbody);
+    
+    // Підсумковий рядок
+    const tfoot = document.createElement('tfoot');
+    tfoot.innerHTML = `
+      <tr>
+        <td colspan="5" style="padding: 10px; font-weight: bold; border-top: 2px solid #ddd; text-align: right;">Загалом:</td>
+        <td style="padding: 10px; font-weight: bold; border-top: 2px solid #ddd; text-align: right;">${actualTotal.toFixed(2)}</td>
+      </tr>
+    `;
+    table.appendChild(tfoot);
+    
+    return table;
+  }
+  
+  // Функція для отримання назви групи
+  function getGroupLabel(groupType) {
+    switch (groupType) {
+      case 'card': return 'Картка';
+      case 'date': return 'Дата';
+      case 'location': return 'Місце';
+      case 'atm': return 'Банкомат';
+      default: return 'Група';
+    }
+  }
+  
+  // Функція для створення рядка транзакції
+  function createTransactionRow(transaction, index) {
     const row = document.createElement('tr');
     row.style.backgroundColor = index % 2 === 0 ? '#fff' : '#f9f9f9';
     
-    // Номер рядка
+    // Номер
     const numCell = document.createElement('td');
-    numCell.textContent = index + 1;
+    numCell.textContent = index;
     numCell.style.padding = '8px 10px';
     numCell.style.borderBottom = '1px solid #ddd';
     
@@ -116,6 +359,26 @@ function showCashWithdrawalTable(transactions, total, searchText) {
     dateCell.style.padding = '8px 10px';
     dateCell.style.borderBottom = '1px solid #ddd';
     
+    // Час
+    const timeCell = document.createElement('td');
+    timeCell.textContent = transaction.time || '-';
+    timeCell.style.padding = '8px 10px';
+    timeCell.style.borderBottom = '1px solid #ddd';
+    
+    // Картка
+    const cardCell = document.createElement('td');
+    cardCell.textContent = transaction.cardNumber || '-';
+    cardCell.style.padding = '8px 10px';
+    cardCell.style.borderBottom = '1px solid #ddd';
+    
+    // Місце
+    const locationCell = document.createElement('td');
+    const locationText = transaction.location || '-';
+    locationCell.textContent = locationText.length > 20 ? locationText.substring(0, 20) + '...' : locationText;
+    locationCell.title = transaction.location || '';
+    locationCell.style.padding = '8px 10px';
+    locationCell.style.borderBottom = '1px solid #ddd';
+    
     // Сума
     const amountCell = document.createElement('td');
     amountCell.textContent = transaction.amount.toFixed(2);
@@ -124,62 +387,53 @@ function showCashWithdrawalTable(transactions, total, searchText) {
     amountCell.style.textAlign = 'right';
     amountCell.style.fontWeight = 'bold';
     
-    // Коментар
-    const commentCell = document.createElement('td');
-    commentCell.textContent = transaction.comment || '-';
-    commentCell.style.padding = '8px 10px';
-    commentCell.style.borderBottom = '1px solid #ddd';
-    commentCell.style.maxWidth = '400px';
-    commentCell.style.overflow = 'hidden';
-    commentCell.style.textOverflow = 'ellipsis';
-    commentCell.style.whiteSpace = 'nowrap';
-    commentCell.title = transaction.comment; // Повний текст у тултіпі
-    
     // Додаємо комірки до рядка
     row.appendChild(numCell);
     row.appendChild(dateCell);
+    row.appendChild(timeCell);
+    row.appendChild(cardCell);
+    row.appendChild(locationCell);
     row.appendChild(amountCell);
-    row.appendChild(commentCell);
     
-    // Додаємо рядок до тіла таблиці
-    tbody.appendChild(row);
+    // Додаємо підказку з повним коментарем
+    row.title = transaction.comment || '';
     
     // Додаємо можливість натискати на рядок для прокрутки до транзакції
     if (transaction.element) {
       row.style.cursor = 'pointer';
-      row.title = 'Натисніть, щоб перейти до транзакції';
       row.onclick = function() {
-        // Прокручуємо до елемента
         transaction.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         
-        // Додаємо ефект мигання для підсвічування
+        // Ефект підсвічування
         transaction.element.style.transition = 'background-color 0.3s';
         const originalBackground = transaction.element.style.backgroundColor;
         transaction.element.style.backgroundColor = 'rgba(255, 193, 7, 0.8)';
         
-        // Повертаємо оригінальний колір
         setTimeout(() => {
           transaction.element.style.backgroundColor = originalBackground;
         }, 1000);
       };
     }
+    
+    return row;
+  }
+  
+  // Рендеримо початкову таблицю
+  const initialTable = renderTable();
+  tableWrapper.appendChild(initialTable);
+  
+  // Обробник зміни групування
+  groupSelect.addEventListener('change', function() {
+    // Видаляємо стару таблицю
+    const oldTable = document.getElementById('finmap-withdrawal-table');
+    if (oldTable) {
+      oldTable.remove();
+    }
+    
+    // Рендеримо нову таблицю з вибраним групуванням
+    const newTable = renderTable(this.value);
+    tableWrapper.appendChild(newTable);
   });
-  
-  table.appendChild(tbody);
-  
-  // Додаємо підсумковий рядок
-  const tfoot = document.createElement('tfoot');
-  tfoot.innerHTML = `
-    <tr>
-      <td colspan="2" style="padding: 10px; font-weight: bold; border-top: 2px solid #ddd; text-align: right;">Загалом:</td>
-      <td style="padding: 10px; font-weight: bold; border-top: 2px solid #ddd; text-align: right;">${total.toFixed(2)}</td>
-      <td style="padding: 10px; border-top: 2px solid #ddd;"></td>
-    </tr>
-  `;
-  table.appendChild(tfoot);
-  
-  // Додаємо таблицю до контейнера
-  tableContainer.appendChild(table);
   
   // Додаємо кнопки дій внизу
   const actionsContainer = document.createElement('div');
@@ -211,12 +465,20 @@ function showCashWithdrawalTable(transactions, total, searchText) {
   copyBtn.onclick = function() {
     let clipboardText = 'Транзакції зняття готівки:\n\n';
     clipboardText += `Пошуковий текст: ${searchText}\n`;
-    clipboardText += `Знайдено транзакцій: ${transactions.length}\n`;
-    clipboardText += `Загальна сума: ${total.toFixed(2)} грн\n\n`;
+    clipboardText += `Знайдено унікальних транзакцій: ${processedTransactions.length}\n`;
+    clipboardText += `Загальна сума: ${actualTotal.toFixed(2)} грн\n\n`;
     
-    clipboardText += 'Дата\tСума\tКоментар\n';
-    transactions.forEach(t => {
-      clipboardText += `${t.date || '-'}\t${t.amount.toFixed(2)}\t${t.comment || '-'}\n`;
+    clipboardText += 'Дата\tЧас\tКартка\tМісце\tСума (грн)\n';
+    processedTransactions.forEach(t => {
+      clipboardText += `${t.date || '-'}\t${t.time || '-'}\t${t.cardNumber || '-'}\t${t.location || '-'}\t${t.amount.toFixed(2)}\n`;
+    });
+    
+    // Додаємо статистику по картках
+    clipboardText += '\nСтатистика за картками:\n';
+    clipboardText += 'Картка\tОперацій\tСума (грн)\n';
+    
+    Object.keys(cardStats).forEach(card => {
+      clipboardText += `${card}\t${cardStats[card].count}\t${cardStats[card].total.toFixed(2)}\n`;
     });
     
     // Копіюємо текст у буфер обміну
@@ -243,84 +505,10 @@ function showCashWithdrawalTable(transactions, total, searchText) {
   document.body.appendChild(tableContainer);
 }
 // Додаємо цю функцію для відображення оновлюваної інформації під час прокрутки
-function createScrollingInfoPanel() {
-  // Перевіряємо, чи вже існує панель
-  if (document.getElementById('finmap-scrolling-info')) {
-    return document.getElementById('finmap-scrolling-info');
-  }
-
-  // Створюємо плаваючу панель з інформацією
-  const infoPanel = document.createElement('div');
-  infoPanel.id = 'finmap-scrolling-info';
-  infoPanel.style.position = 'fixed';
-  infoPanel.style.top = '10px';
-  infoPanel.style.left = '10px';
-  infoPanel.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
-  infoPanel.style.boxShadow = '0 2px 5px rgba(0, 0, 0, 0.2)';
-  infoPanel.style.borderRadius = '4px';
-  infoPanel.style.padding = '10px';
-  infoPanel.style.fontSize = '14px';
-  infoPanel.style.zIndex = '9998';
-  infoPanel.style.maxWidth = '400px';
-  infoPanel.style.maxHeight = '400px';
-  infoPanel.style.overflowY = 'auto';
-  infoPanel.style.transition = 'opacity 0.3s';
-  
-  // Створюємо заголовок
-  const header = document.createElement('div');
-  header.style.fontWeight = 'bold';
-  header.style.marginBottom = '5px';
-  header.style.display = 'flex';
-  header.style.justifyContent = 'space-between';
-  header.style.alignItems = 'center';
-  header.innerHTML = `
-    <span>Знайдені транзакції зняття готівки:</span>
-    <span id="finmap-withdrawal-count">(0)</span>
-  `;
-  
-  // Створюємо загальну суму
-  const totalSection = document.createElement('div');
-  totalSection.style.marginBottom = '10px';
-  totalSection.style.fontWeight = 'bold';
-  totalSection.innerHTML = `Загальна сума: <span id="finmap-withdrawal-total">0.00</span> ₴`;
-  
-  // Створюємо контейнер для списку транзакцій
-  const transactionsList = document.createElement('div');
-  transactionsList.id = 'finmap-transactions-list';
-  transactionsList.style.fontSize = '13px';
-  
-  // Додаємо кнопку закриття
-  const closeButton = document.createElement('button');
-  closeButton.innerHTML = '✕';
-  closeButton.style.position = 'absolute';
-  closeButton.style.top = '5px';
-  closeButton.style.right = '5px';
-  closeButton.style.background = 'none';
-  closeButton.style.border = 'none';
-  closeButton.style.cursor = 'pointer';
-  closeButton.style.fontSize = '16px';
-  closeButton.style.color = '#777';
-  closeButton.onclick = function() {
-    infoPanel.style.opacity = '0';
-    // Після затухання анімації видаляємо
-    setTimeout(() => infoPanel.remove(), 300);
-  };
-  
-  // Збираємо панель
-  infoPanel.appendChild(closeButton);
-  infoPanel.appendChild(header);
-  infoPanel.appendChild(totalSection);
-  infoPanel.appendChild(transactionsList);
-  
-  // Додаємо в документ
-  document.body.appendChild(infoPanel);
-  
-  return infoPanel;
-}
 
 // Функція для оновлення інформації на панелі
 function updateScrollingInfo(transactions, total) {
-  const infoPanel = createScrollingInfoPanel();
+ 
   const transactionsList = document.getElementById('finmap-transactions-list');
   const countElement = document.getElementById('finmap-withdrawal-count');
   const totalElement = document.getElementById('finmap-withdrawal-total');
@@ -362,7 +550,7 @@ async function waitForElement(selector, timeout = 5000) {
   while (Date.now() - startTime < timeout) {
     const element = document.querySelector(selector);
     if (element) return element;
-    await sleep(100);
+    await sleep(500);
   }
   
   return null;
@@ -600,6 +788,8 @@ function highlightSubstring(originalElement, searchText) {
 }
 
 // Оновлена функція фільтрації
+// Модифікуємо функцію для фільтрації та пошуку транзакцій зняття готівки
+// Функція для фільтрації та пошуку транзакцій зняття готівки
 async function filterByDate(periodType, startDate, endDate, cashWithdrawalText = "Зняття готівки: Банкомат") {
   try {
     sendStatus('Початок фільтрації за датою та пошуку зняття готівки...', 'pending');
@@ -686,6 +876,9 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
     let cashWithdrawalCount = 0;
     let cashWithdrawalTotal = 0;
     
+    // Масив для зберігання знайдених транзакцій зняття готівки для таблиці
+    let cashWithdrawalTransactions = [];
+    
     // Функція для скасування автоматичної прокрутки
     function stopScrolling() {
       if (scrollInterval) {
@@ -713,9 +906,9 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
       document.body.removeChild(stopButton);
       sendStatus('Пошук зупинено користувачем', 'warning', true);
       
-      // Показуємо інформацію про зняття готівки навіть при зупинці
+      // Показуємо таблицю з результатами при зупинці
       if (cashWithdrawalCount > 0) {
-        showCashWithdrawalInfo(cashWithdrawalCount, cashWithdrawalTotal, cashWithdrawalText);
+        showCashWithdrawalTable(cashWithdrawalTransactions, cashWithdrawalTotal, cashWithdrawalText);
       }
     });
     
@@ -730,6 +923,74 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
     let lastMatchDate = null;
     let foundOutOfRangeDate = false;
     
+    // Функція для отримання реальної суми транзакції з рядка
+    function extractTransactionAmount(row) {
+      // Перевіряємо спочатку елемент з класом jss1687, який містить суму транзакції
+      const amountElement = row.querySelector('.jss1687');
+      if (amountElement) {
+        const amountText = amountElement.textContent.trim();
+        // Видаляємо символи валюти, пробіли і залишаємо тільки числа та знаки мінус і крапки/коми
+        const amountClean = amountText.replace(/[^-\d.,]/g, '').replace(',', '.');
+        // Перевіряємо, що результат - це число
+        if (!isNaN(parseFloat(amountClean))) {
+          return Math.abs(parseFloat(amountClean)); // Повертаємо абсолютне значення
+        }
+      }
+      
+      // Якщо не знайшли суму через клас, шукаємо через структуру
+      // Шукаємо div:nth-child(3), який зазвичай містить суму
+      const amountContainer = row.querySelector('div:nth-child(3)');
+      if (amountContainer) {
+        const amountParagraph = amountContainer.querySelector('p');
+        if (amountParagraph) {
+          const amountText = amountParagraph.textContent.trim();
+          const amountClean = amountText.replace(/[^-\d.,]/g, '').replace(',', '.');
+          if (!isNaN(parseFloat(amountClean))) {
+            return Math.abs(parseFloat(amountClean));
+          }
+        }
+      }
+      
+      // Якщо і це не допомогло, пробуємо знайти будь-який елемент, що містить суму з мінусом
+      const allParagraphs = row.querySelectorAll('p');
+      for (const paragraph of allParagraphs) {
+        const text = paragraph.textContent.trim();
+        if (text.startsWith('-') && /^-[\d\s.,]+\s*₴/.test(text)) {
+          const amountClean = text.replace(/[^-\d.,]/g, '').replace(',', '.');
+          return Math.abs(parseFloat(amountClean));
+        }
+      }
+      
+      // Якщо нічого не знайшли, повертаємо нуль
+      console.warn('Не вдалося витягнути суму транзакції:', row);
+      return 0;
+    }
+    
+    // Функція для отримання дати і часу транзакції
+    function extractTransactionDateTime(row) {
+      const result = { date: '', time: '' };
+      
+      // Шукаємо елемент з датою (зазвичай другий div)
+      const dateContainer = row.querySelector('div:nth-child(2)');
+      if (dateContainer) {
+        const dateParagraphs = dateContainer.querySelectorAll('p');
+        if (dateParagraphs.length >= 1) {
+          result.date = dateParagraphs[0].textContent.trim();
+        }
+        if (dateParagraphs.length >= 2) {
+          // Другий параграф зазвичай містить час у форматі "Вчора XX:XX"
+          const timeText = dateParagraphs[1].textContent.trim();
+          // Витягуємо частину з часом (XX:XX)
+          const timeMatch = timeText.match(/\d{2}:\d{2}/);
+          if (timeMatch) {
+            result.time = timeMatch[0];
+          }
+        }
+      }
+      
+      return result;
+    }
+    
     // Функція для пошуку та підсвічування транзакцій
     function findAndHighlightTransactions() {
       // Оновлюємо список видимих рядків
@@ -740,16 +1001,8 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
       // Для кожного рядка
       for (const row of visibleRows) {
         // 1. Отримуємо дату (другий div)
-        const dateContainer = row.querySelector('div:nth-child(2)');
-        let dateText = '';
-        
-        if (dateContainer) {
-          // Шукаємо дату в першому параграфі
-          const dateParagraph = dateContainer.querySelector('p:first-child');
-          if (dateParagraph) {
-            dateText = dateParagraph.textContent.trim();
-          }
-        }
+        const dateTimeInfo = extractTransactionDateTime(row);
+        const dateText = dateTimeInfo.date;
         
         if (!dateText || !/^\d{1,2}\s+[а-яіїє]{3}\s+\d{4}$/i.test(dateText)) continue;
         
@@ -772,28 +1025,9 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
             lastMatchDate = rowDate;
           }
           
-          // 2. Перевіряємо, чи це витрата (від'ємна сума в третьому div)
-          const amountContainer = row.querySelector('div:nth-child(3)');
-          let isExpense = false;
-          let amount = 0;
-          let amountText = '';
-          
-          if (amountContainer) {
-            // Шукаємо суму
-            const amountParagraph = amountContainer.querySelector('p');
-            if (amountParagraph) {
-              amountText = amountParagraph.textContent.trim();
-              // Перевіряємо, чи це від'ємна сума
-              if (amountText.startsWith('-')) {
-                isExpense = true;
-                // Перетворюємо текст у числове значення, видаляючи пробіли, валюту і знак мінус
-                amount = parseFloat(amountText.replace(/[^\d.,]/g, '').replace(',', '.')) * -1;
-                
-                // Підсвічуємо суму для всіх витрат
-                amountParagraph.classList.add('finmap-highlight-amount');
-              }
-            }
-          }
+          // 2. Перевіряємо, чи це витрата
+          const amount = extractTransactionAmount(row);
+          let isExpense = amount > 0; // Якщо сума більше 0, вважаємо це витратою
           
           // 3. Якщо це витрата, перевіряємо чи має коментар у будь-якому div
           if (isExpense && cashWithdrawalText) {
@@ -835,23 +1069,48 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
               // Додаємо специфічний клас для зняття готівки
               row.classList.add('finmap-cash-withdrawal');
               cashWithdrawalCount++;
-              cashWithdrawalTotal += Math.abs(amount);
+              cashWithdrawalTotal += amount;
+              
+              // Додаємо транзакцію до масиву для таблиці
+              cashWithdrawalTransactions.push({
+                date: dateText,
+                time: dateTimeInfo.time,
+                amount: amount,
+                comment: commentText,
+                element: row // Зберігаємо посилання на DOM-елемент для прокрутки
+              });
               
               // Виділяємо підрядок в коментарі
               highlightSubstring(commentElement, cashWithdrawalText);
               
+              // Знаходимо елемент з сумою для підсвічування
+              const amountElements = row.querySelectorAll('p');
+              for (const amountEl of amountElements) {
+                const text = amountEl.textContent.trim();
+                if (text.includes('₴') && text.startsWith('-')) {
+                  amountEl.classList.add('finmap-highlight-amount');
+                  break;
+                }
+              }
+              
               // Додаємо відзнаку "Готівка" поруч з амаунтом, якщо її ще немає
-              if (amountContainer && !amountContainer.querySelector('.finmap-info-badge')) {
-                const badge = document.createElement('span');
-                badge.className = 'finmap-info-badge';
-                badge.textContent = 'Готівка';
-                amountContainer.appendChild(badge);
+              if (!row.querySelector('.finmap-info-badge')) {
+                const amountEl = row.querySelector('.finmap-highlight-amount');
+                if (amountEl && amountEl.parentNode) {
+                  const badge = document.createElement('span');
+                  badge.className = 'finmap-info-badge';
+                  badge.textContent = 'Готівка';
+                  amountEl.parentNode.appendChild(badge);
+                }
               }
               
               // Додаємо підказку з інформацією
-              row.title = `Зняття готівки: ${Math.abs(amount).toFixed(2)} грн`;
+              row.title = `Зняття готівки: ${amount.toFixed(2)} грн`;
               
-              console.log(`Знайдено зняття готівки: ${commentText}, сума: ${Math.abs(amount)}`);
+              console.log(`Знайдено зняття готівки: ${commentText}, сума: ${amount}`);
+              
+              // Оновлюємо панель з інформацією про зняття готівки
+              updateScrollingInfo(cashWithdrawalTransactions, cashWithdrawalTotal);
             }
           }
           
@@ -872,9 +1131,9 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
             const message = `Знайдено ${matchCount} транзакцій за вказаний період, досягнуто кінця діапазону`;
             sendStatus(message, 'success', true);
             
-            // Показуємо інформацію про зняття готівки
+            // Показуємо таблицю результатів замість простого інформаційного блоку
             if (cashWithdrawalCount > 0) {
-              showCashWithdrawalInfo(cashWithdrawalCount, cashWithdrawalTotal, cashWithdrawalText);
+              showCashWithdrawalTable(cashWithdrawalTransactions, cashWithdrawalTotal, cashWithdrawalText);
             }
             
             break;
@@ -890,25 +1149,19 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
         return;
       }
       
-      // Якщо в поточному вікні знайдено транзакції в діапазоні, але не знайдено поза діапазоном, прокручуємо далі
+      // Логіка прокрутки та пошуку залишається без змін
       if (currentRowsFound > 0) {
-        // Прокручуємо вниз до наступної порції транзакцій
         scrollContainer.scrollBy({ top: 300, behavior: 'smooth' });
-        scrollAttempts = 0; // Скидаємо лічильник спроб, бо ми на правильному шляху
+        scrollAttempts = 0;
       } else {
-        // Якщо в поточному вікні не знайдено транзакцій в діапазоні, перевіряємо, чи ми вже щось знайшли раніше
         if (foundFirstMatch) {
-          // Якщо раніше знаходили, але зараз не знаходимо, і не знайшли дати поза діапазоном,
-          // продовжуємо гортати, щоб знайти або більше потрібних транзакцій, або дати поза діапазоном
           scrollContainer.scrollBy({ top: 300, behavior: 'smooth' });
           scrollAttempts++;
         } else {
-          // Якщо ще не знайшли жодної транзакції в діапазоні, продовжуємо шукати
           scrollContainer.scrollBy({ top: 300, behavior: 'smooth' });
           scrollAttempts++;
         }
         
-        // Перевіряємо, чи не досягли ми ліміту спроб
         if (scrollAttempts >= maxScrollAttempts) {
           stopScrolling();
           document.body.removeChild(stopButton);
@@ -917,9 +1170,8 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
             const message = `Знайдено ${matchCount} транзакцій за вказаний період, досягнуто кінця списку`;
             sendStatus(message, 'success', true);
             
-            // Показуємо інформацію про зняття готівки
             if (cashWithdrawalCount > 0) {
-              showCashWithdrawalInfo(cashWithdrawalCount, cashWithdrawalTotal, cashWithdrawalText);
+              showCashWithdrawalTable(cashWithdrawalTransactions, cashWithdrawalTotal, cashWithdrawalText);
             }
           } else {
             sendStatus('Транзакцій за вказаний період не знайдено', 'warning', true);
@@ -928,11 +1180,9 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
         }
       }
       
-      // Перевіряємо, чи змінилася позиція прокрутки
       const currentScrollTop = scrollContainer.scrollTop;
       setTimeout(() => {
         if (scrollInterval && scrollContainer.scrollTop === currentScrollTop) {
-          // Якщо позиція не змінилася, можливо, ми досягли кінця списку
           stopScrolling();
           document.body.removeChild(stopButton);
           
@@ -940,9 +1190,8 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
             const message = `Знайдено ${matchCount} транзакцій за вказаний період, досягнуто кінця списку`;
             sendStatus(message, 'success', true);
             
-            // Показуємо інформацію про зняття готівки
             if (cashWithdrawalCount > 0) {
-              showCashWithdrawalInfo(cashWithdrawalCount, cashWithdrawalTotal, cashWithdrawalText);
+              showCashWithdrawalTable(cashWithdrawalTransactions, cashWithdrawalTotal, cashWithdrawalText);
             }
           } else {
             sendStatus('Транзакцій за вказаний період не знайдено', 'warning', true);
