@@ -644,6 +644,7 @@ function highlightSubstring(originalElement, searchText) {
 // Оновлена функція фільтрації
 // Оновлена функція фільтрації з виправленою логікою прокрутки
 // Оновлена функція фільтрації з виправленою логікою прокрутки та оригінальним виводом результатів
+// Оновлена функція фільтрації з виправленою логікою прокрутки та оригінальним виводом результатів
 async function filterByDate(periodType, startDate, endDate, cashWithdrawalText = "Зняття готівки: Банкомат") {
   try {
     sendStatus('Початок фільтрації за датою та пошуку зняття готівки...', 'pending');
@@ -655,7 +656,12 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
     let filterStartDate = null;
     let filterEndDate = null;
     
-    if (periodType === 'yesterday') {
+    if (periodType === 'today') {
+      const today = new Date();
+      filterStartDate = today;
+      filterEndDate = today;
+      sendStatus(`Фільтрація за сьогоднішнім днем: ${today.toLocaleDateString('uk-UA')}`, 'pending');
+    } else if (periodType === 'yesterday') {
       const yesterday = getYesterday();
       filterStartDate = yesterday;
       filterEndDate = yesterday;
@@ -1067,7 +1073,7 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
             showCashWithdrawalTable(cashWithdrawalTransactions, cashWithdrawalTotal, cashWithdrawalText);
           }
         }
-      }, 700); // Збільшуємо час очікування для більш надійної перевірки
+      }, 1500); // Змінено з 700мс на 1500мс для виправлення проблеми передчасної зупинки
     }
     
     // Запускаємо інтервал для прокрутки та пошуку
@@ -1087,7 +1093,6 @@ async function filterByDate(periodType, startDate, endDate, cashWithdrawalText =
     }
   }
 }
-
 // Функція для відображення інформації про знайдені транзакції зняття готівки
 function showCashWithdrawalInfo(count, total, searchText) {
   // Додатково відправляємо статус
@@ -1303,7 +1308,7 @@ async function findCashWithdrawals(searchText = "Зняття готівки: Б
     // Прокручуємо сторінку і аналізуємо транзакції
     let lastScrollTop = -1;
     let scrollAttempts = 0;
-    const maxScrollAttempts = 50;
+    const maxScrollAttempts = 250;
     
     while (scrollAttempts < maxScrollAttempts) {
       // Перевіряємо видимі рядки
