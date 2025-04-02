@@ -17,7 +17,417 @@ const MAX_WAIT_TIME = 10000; // Максимальний час очікуван
 const HIGHLIGHT_PERIOD_COLOR = 'rgba(144, 238, 144, 0.3)'; // Світло-зелений для періоду
 const HIGHLIGHT_MATCH_COLOR = 'rgba(255, 215, 0, 0.4)'; // Золотистий для збігів зняття готівки
 const HIGHLIGHT_BORDER = '1px solid #00B28E';
+// Додаємо стилі для модального вікна
+// Функція для створення модального вікна результатів
+function showResultsModal(reportData, periodInfo) {
+  // Перевірка, чи вже існує модальне вікно
+  if (document.querySelector('.result-modal-overlay')) {
+    document.querySelector('.result-modal-overlay').remove();
+  }
 
+  // Створюємо елементи для модального вікна
+  const modalOverlay = document.createElement('div');
+  modalOverlay.className = 'result-modal-overlay';
+
+  const modal = document.createElement('div');
+  modal.className = 'result-modal';
+
+  // Заголовок модального вікна
+  const header = document.createElement('div');
+  header.className = 'result-modal-header';
+  
+  const title = document.createElement('h3');
+  title.className = 'result-modal-title';
+  title.textContent = 'Результати пошуку';
+  
+  const closeButton = document.createElement('button');
+  closeButton.className = 'result-modal-close';
+  closeButton.innerHTML = '&times;';
+  closeButton.setAttribute('aria-label', 'Закрити');
+  closeButton.onclick = () => modalOverlay.remove();
+  
+  header.appendChild(title);
+  header.appendChild(closeButton);
+
+  // Контент модального вікна
+  const content = document.createElement('div');
+  content.className = 'result-modal-content';
+
+  // Блок з інформацією про період
+  const summary = document.createElement('div');
+  summary.className = 'result-modal-summary';
+  
+  const periodText = document.createElement('p');
+  periodText.innerHTML = `<strong>Період:</strong> ${periodInfo}`;
+  summary.appendChild(periodText);
+  
+  const totalText = document.createElement('p');
+  if (reportData.count > 0) {
+    totalText.innerHTML = `<strong>Знайдено транзакцій:</strong> <span class="highlight">${reportData.count}</span>`;
+  } else {
+    totalText.innerHTML = `<strong>Знайдено транзакцій:</strong> 0`;
+  }
+  summary.appendChild(totalText);
+  
+  if (reportData.count > 0) {
+    const amountText = document.createElement('p');
+    amountText.innerHTML = `<strong>Загальна сума:</strong> <span class="highlight">${reportData.totalAmount.toFixed(2)} ₴</span>`;
+    summary.appendChild(amountText);
+  }
+  
+  content.appendChild(summary);
+
+  // Таблиця з транзакціями або повідомлення про відсутність результатів
+  if (reportData.count > 0) {
+    const table = document.createElement('table');
+    table.className = 'result-modal-table';
+    
+    // Заголовок таблиці
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    
+    ['Дата', 'Час', 'Сума', 'Коментар'].forEach(headerText => {
+      const th = document.createElement('th');
+      th.textContent = headerText;
+      headerRow.appendChild(th);
+    });
+    
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    
+    // Тіло таблиці
+    const tbody = document.createElement('tbody');
+    
+    reportData.transactions.forEach(tx => {
+      const row = document.createElement('tr');
+      
+      const dateCell = document.createElement('td');
+      dateCell.textContent = tx.date;
+      row.appendChild(dateCell);
+      
+      const timeCell = document.createElement('td');
+      timeCell.textContent = tx.time;
+      row.appendChild(timeCell);
+      
+      const amountCell = document.createElement('td');
+      amountCell.textContent = `${tx.amount.toFixed(2)} ₴`;
+      amountCell.style.color = tx.amount < 0 ? '#e74c3c' : '#2ecc71';
+      row.appendChild(amountCell);
+      
+      const commentCell = document.createElement('td');
+      commentCell.textContent = tx.comment;
+      row.appendChild(commentCell);
+      
+      tbody.appendChild(row);
+    });
+    
+    table.appendChild(tbody);
+    content.appendChild(table);
+  } else {
+    // Повідомлення про відсутність результатів
+    const emptyMessage = document.createElement('div');
+    emptyMessage.className = 'result-modal-empty';
+    emptyMessage.innerHTML = `
+      <i>📋</i>
+      <p>Транзакцій зняття готівки за вказаними критеріями не знайдено.</p>
+    `;
+    content.appendChild(emptyMessage);
+  }
+
+  // Блок з кнопками для дій
+  const actions = document.createElement('div');
+  actions.className = 'result-modal-actions';
+  
+  // Кнопка для закриття
+  const closeAction = document.createElement('button');
+  closeAction.className = 'secondary';
+  closeAction.textContent = 'Закрити';
+  closeAction.onclick = () => modalOverlay.remove();
+  
+  // Кнопка для копіювання як тексту
+  const copyTextButton = document.createElement('button');
+  copyTextButton.textContent = 'Копіювати як текст';
+  copyTextButton.onclick = () => {
+    copyResultsAsText(reportData, periodInfo);
+  };
+  
+  // Кнопка для копіювання як CSV
+  const copyCSVButton = document.createElement('button');
+  copyCSVButton.textContent = 'Копіювати як CSV';
+  copyCSVButton.onclick = () => {
+    copyResultsAsCSV(reportData);
+  };
+  
+  if (reportData.count > 0) {
+    actions.appendChild(closeAction);
+    actions.appendChild(copyCSVButton);
+    actions.appendChild(copyTextButton);
+  } else {
+    actions.appendChild(closeAction);
+  }
+
+  // Збираємо модальне вікно
+  modal.appendChild(header);
+  modal.appendChild(content);
+  modal.appendChild(actions);
+  modalOverlay.appendChild(modal);
+  
+  // Додаємо модальне вікно до сторінки
+  document.body.appendChild(modalOverlay);
+  
+  // Обробник клавіші Escape для закриття
+  const escHandler = (e) => {
+    if (e.key === 'Escape') {
+      modalOverlay.remove();
+      document.removeEventListener('keydown', escHandler);
+    }
+  };
+  document.addEventListener('keydown', escHandler);
+}
+
+// Функція для копіювання результатів як форматованого тексту
+function copyResultsAsText(reportData, periodInfo) {
+  let textResult = `=== Результати пошуку зняття готівки ===\n`;
+  textResult += `Період: ${periodInfo}\n`;
+  textResult += `Знайдено транзакцій: ${reportData.count}\n`;
+  
+  if (reportData.count > 0) {
+    textResult += `Загальна сума: ${reportData.totalAmount.toFixed(2)} ₴\n\n`;
+    textResult += `Транзакції:\n`;
+    
+    reportData.transactions.forEach((tx, index) => {
+      textResult += `${index + 1}. Дата: ${tx.date}, Час: ${tx.time}, Сума: ${tx.amount.toFixed(2)} ₴\n`;
+      textResult += `   Коментар: ${tx.comment}\n`;
+    });
+  }
+  
+  copyToClipboard(textResult);
+}
+
+// Функція для копіювання результатів як CSV
+function copyResultsAsCSV(reportData) {
+  if (reportData.count === 0) return;
+  
+  // Заголовки CSV
+  let csvContent = 'Дата,Час,Сума,Коментар\n';
+  
+  // Дані про транзакції
+  reportData.transactions.forEach(tx => {
+    // Екрануємо коми і подвійні лапки в коментарі
+    const safeComment = tx.comment.replace(/"/g, '""');
+    csvContent += `${tx.date},${tx.time},${tx.amount.toFixed(2)},"${safeComment}"\n`;
+  });
+  
+  copyToClipboard(csvContent);
+}
+
+// Допоміжна функція для копіювання тексту в буфер обміну
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text)
+    .then(() => {
+      // Показуємо повідомлення про успішне копіювання
+      const notification = document.createElement('div');
+      notification.className = 'copy-success';
+      notification.textContent = 'Скопійовано в буфер обміну!';
+      document.body.appendChild(notification);
+      
+      // Видаляємо повідомлення через 2 секунди
+      setTimeout(() => {
+        notification.remove();
+      }, 2000);
+    })
+    .catch(err => {
+      console.error('Помилка копіювання тексту: ', err);
+    });
+}
+function injectModalStyles() {
+  if (document.getElementById('finmap-bot-modal-styles')) return;
+  
+  const styleSheet = document.createElement('style');
+  styleSheet.id = 'finmap-bot-modal-styles';
+  styleSheet.innerHTML = `
+  /* Стилі для модального вікна результатів */
+  .result-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .result-modal {
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    width: 90%;
+    max-width: 600px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalAppear 0.3s ease-out;
+  }
+
+  @keyframes modalAppear {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .result-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background-color: #00B28E;
+    color: white;
+  }
+
+  .result-modal-title {
+    font-size: 18px;
+    font-weight: 500;
+    margin: 0;
+  }
+
+  .result-modal-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 22px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    opacity: 0.8;
+  }
+
+  .result-modal-close:hover {
+    opacity: 1;
+  }
+
+  .result-modal-content {
+    padding: 20px;
+    overflow-y: auto;
+  }
+
+  .result-modal-summary {
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #eee;
+  }
+
+  .result-modal-summary p {
+    margin: 6px 0;
+    font-size: 15px;
+  }
+
+  .result-modal-summary .highlight {
+    font-weight: 600;
+    color: #00B28E;
+  }
+
+  .result-modal-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+  }
+
+  .result-modal-table th {
+    background-color: #f5f5f5;
+    padding: 8px;
+    text-align: left;
+    font-weight: 500;
+    border-bottom: 2px solid #eee;
+  }
+
+  .result-modal-table td {
+    padding: 8px;
+    border-bottom: 1px solid #eee;
+    font-size: 14px;
+  }
+
+  .result-modal-table tr:hover {
+    background-color: #f9f9f9;
+  }
+
+  .result-modal-actions {
+    padding: 15px 20px;
+    background-color: #f5f5f5;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .result-modal-actions button {
+    background-color: #00B28E;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+  }
+
+  .result-modal-actions button:hover {
+    background-color: #009579;
+  }
+
+  .result-modal-actions button.secondary {
+    background-color: #e0e0e0;
+    color: #333;
+  }
+
+  .result-modal-actions button.secondary:hover {
+    background-color: #d0d0d0;
+  }
+
+  .result-modal-empty {
+    text-align: center;
+    padding: 30px 0;
+    color: #666;
+  }
+
+  .result-modal-empty i {
+    font-size: 40px;
+    color: #ddd;
+    margin-bottom: 10px;
+    display: block;
+  }
+
+  .copy-success {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #2ecc71;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    z-index: 1001;
+    animation: fadeInOut 2s ease-in-out;
+  }
+
+  @keyframes fadeInOut {
+    0% { opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  `;
+  
+  document.head.appendChild(styleSheet);
+}
 // --- Helper Functions ---
 
 /**
@@ -267,13 +677,15 @@ async function ensureAllTimeSelected() {
  * @param {boolean} findCashWithdrawals Whether to find cash withdrawals.
  * @param {string} cashWithdrawalText Text to search for in comments.
  */
+// Modified scrollAndProcessTransactions function with improved stop logic
+
 async function scrollAndProcessTransactions(periodType, startDate, endDate, findCashWithdrawals, cashWithdrawalText) {
+  injectModalStyles();
   sendStatus('Крок 2: Початок прокрутки та аналізу транзакцій...');
   clearAllHighlights(); // Clear previous highlights
 
   const scrollContainer = await waitForElement(TRANSACTION_LIST_SELECTOR);
   if (!scrollContainer) {
-      // Send final error status with done:true
       sendStatus('Помилка: Не знайдено контейнер списку транзакцій.', 'error', true);
       return;
   }
@@ -287,12 +699,10 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
   let targetStartDate, targetEndDate, stopScrollingDate;
 
   try {
-      // ... (logic for determining targetStartDate, targetEndDate, stopScrollingDate - same as before) ...
       if (periodType === 'today') {
           targetStartDate = new Date(today);
           targetEndDate = new Date(today);
-          stopScrollingDate = new Date(yesterday);
-          stopScrollingDate.setDate(yesterday.getDate() - 1);
+          stopScrollingDate = new Date(yesterday); // Stop when we see yesterday's date
           sendStatus(`Цільовий період: Сьогодні (${formatDate(targetStartDate)})`);
           sendStatus(`Прокрутка до появи дати: ${formatDate(stopScrollingDate)}`);
       } else if (periodType === 'yesterday') {
@@ -300,31 +710,32 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
           targetEndDate = new Date(yesterday);
           const dayBeforeYesterday = new Date(yesterday);
           dayBeforeYesterday.setDate(yesterday.getDate() - 1);
-          stopScrollingDate = new Date(dayBeforeYesterday);
-          stopScrollingDate.setDate(dayBeforeYesterday.getDate() - 1);
+          stopScrollingDate = new Date(dayBeforeYesterday); // Stop when we see day before yesterday
           sendStatus(`Цільовий період: Вчора (${formatDate(targetStartDate)})`);
           sendStatus(`Прокрутка до появи дати: ${formatDate(stopScrollingDate)}`);
       } else { // custom
           if (!startDate || !endDate) {
-               sendStatus('Помилка: Для користувацького періоду не вказано дат.', 'error', true); // Added done:true
+               sendStatus('Помилка: Для користувацького періоду не вказано дат.', 'error', true);
                return;
           }
           targetStartDate = new Date(startDate + 'T00:00:00');
           targetEndDate = new Date(endDate + 'T00:00:00');
-           targetStartDate.setHours(0,0,0,0);
-           targetEndDate.setHours(0,0,0,0);
+          targetStartDate.setHours(0,0,0,0);
+          targetEndDate.setHours(0,0,0,0);
 
           if (isNaN(targetStartDate) || isNaN(targetEndDate)) {
-              sendStatus('Помилка: Недійсний формат дат для користувацького періоду.', 'error', true); // Added done:true
+              sendStatus('Помилка: Недійсний формат дат для користувацького періоду.', 'error', true);
               return;
           }
+          
+          // Set stopScrollingDate to the day before the start date
           stopScrollingDate = new Date(targetStartDate);
           stopScrollingDate.setDate(targetStartDate.getDate() - 1);
           sendStatus(`Цільовий період: ${formatDate(targetStartDate)} - ${formatDate(targetEndDate)}`);
           sendStatus(`Прокрутка до появи дати: ${formatDate(stopScrollingDate)}`);
       }
   } catch (e) {
-       sendStatus(`Помилка визначення періоду: ${e.message}`, 'error', true); // Added done:true
+       sendStatus(`Помилка визначення періоду: ${e.message}`, 'error', true);
        console.error("Date parsing error:", e);
        return;
   }
@@ -335,14 +746,17 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
   let reachedStopDate = false;
   let inactivityCounter = 0;
   const MAX_INACTIVITY = 5;
+  
+  // Add tracking variables to help debug
+  let debugDatesFound = [];
+  let debugOldestDate = null;
 
   while (!reachedStopDate && inactivityCounter < MAX_INACTIVITY) {
       const currentScrollTop = scrollContainer.scrollTop;
-      // Don't log every scroll step to avoid flooding, maybe log every 5th step
-      if (inactivityCounter === 0 && processedRowIndexes.size % 10 < 2) { // Log occasionally
+      
+      if (inactivityCounter === 0 && processedRowIndexes.size % 10 < 2) {
            sendStatus(`Прокрутка: позиція ${currentScrollTop}, оброблено ~${processedRowIndexes.size} рядків.`);
       }
-
 
       const rows = scrollContainer.querySelectorAll(TRANSACTION_ROW_SELECTOR);
       let foundNewRows = false;
@@ -367,9 +781,20 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
           const transactionDate = parseDateUA(dateStr);
 
           if (!transactionDate) continue;
+          
+          // Add to debug dates collection
+          debugDatesFound.push({
+              str: dateStr,
+              date: formatDate(transactionDate)
+          });
 
+          // Track oldest date we've found
           if (!currentOldestVisibleDate || transactionDate < currentOldestVisibleDate) {
               currentOldestVisibleDate = transactionDate;
+              debugOldestDate = {
+                  str: dateStr,
+                  date: formatDate(transactionDate)
+              };
           }
 
           // --- Highlighting & Matching Logic ---
@@ -391,21 +816,17 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
                           time: dateElement.nextElementSibling ? dateElement.nextElementSibling.textContent.trim() : 'N/A',
                           amount: amount,
                           comment: commentStr,
-                          rawDateStr: dateStr, // Keep raw string if needed
+                          rawDateStr: dateStr,
                       };
 
-                      // *** DUPLICATE CHECK before adding ***
                       const isDuplicate = matchedTransactions.some(existingTx =>
                           existingTx.date === transactionData.date &&
-                         // existingTx.time === transactionData.time && // Time might not be perfectly unique if multiple withdrawals happen close together
                           existingTx.amount === transactionData.amount &&
-                          existingTx.comment === transactionData.comment // Comment is likely the most unique part here
+                          existingTx.comment === transactionData.comment
                       );
 
                       if (!isDuplicate) {
                           matchedTransactions.push(transactionData);
-                      } else {
-                         // console.warn("Запобігання додаванню дубліката до звіту:", transactionData.comment.substring(0, 50) + '...'); // Log less verbosely
                       }
                   }
               }
@@ -413,11 +834,30 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
           highlightRow(row, highlightType);
       } // End row processing loop
 
-      // --- Check Stop Condition ---
+      // --- Enhanced Debug Logging for Oldest Date ---
+      if (currentOldestVisibleDate) {
+          // Log more detailed information about the dates we're comparing
+          console.log(`Current oldest visible date: ${formatDate(currentOldestVisibleDate)}, Stop date: ${formatDate(stopScrollingDate)}`);
+          console.log(`Comparison result: ${currentOldestVisibleDate <= stopScrollingDate}`);
+          
+          // Check both date and time components
+          console.log(`Date components - Oldest: ${currentOldestVisibleDate.getFullYear()}-${currentOldestVisibleDate.getMonth()}-${currentOldestVisibleDate.getDate()}`);
+          console.log(`Date components - Stop: ${stopScrollingDate.getFullYear()}-${stopScrollingDate.getMonth()}-${stopScrollingDate.getDate()}`);
+      }
+
+      // --- FIXED: Improved Stop Condition ---
       if (currentOldestVisibleDate && currentOldestVisibleDate <= stopScrollingDate) {
-          reachedStopDate = true;
-          sendStatus(`Досягнуто цільової дати зупинки (${formatDate(stopScrollingDate)}), зупинка прокрутки.`);
-          break;
+          // Another safeguard: check if the dates are actually different when formatted
+          const oldestDateFormatted = formatDate(currentOldestVisibleDate);
+          const stopDateFormatted = formatDate(stopScrollingDate);
+          
+          if (oldestDateFormatted <= stopDateFormatted) {
+              reachedStopDate = true;
+              sendStatus(`Досягнуто цільової дати зупинки (найстаріша видима дата: ${oldestDateFormatted}, цільова дата зупинки: ${stopDateFormatted}), зупинка прокрутки.`, 'success');
+              break;
+          } else {
+              sendStatus(`Дати порівнюються нерівно: ${oldestDateFormatted} vs ${stopDateFormatted}. Продовжуємо прокрутку.`, 'warning');
+          }
       }
 
       // --- Scroll Down ---
@@ -425,33 +865,45 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
       scrollContainer.scrollTop += SCROLL_STEP;
 
       // --- Wait After Scrolling ---
-      await delay(SCROLL_DELAY); // Ensure delay happens AFTER scroll command
+      await delay(SCROLL_DELAY);
 
       // --- Check for Inactivity / Reaching Bottom ---
-       const newScrollTop = scrollContainer.scrollTop;
-       // Check if scrollHeight is meaningful
-       const scrollHeight = scrollContainer.scrollHeight;
-       // Use a tolerance when checking bottom, especially with dynamic content
-       const reachedBottom = (scrollHeight > 0) && (newScrollTop + scrollContainer.clientHeight >= scrollHeight - 20);
+      const newScrollTop = scrollContainer.scrollTop;
+      const scrollHeight = scrollContainer.scrollHeight;
+      const reachedBottom = (scrollHeight > 0) && (newScrollTop + scrollContainer.clientHeight >= scrollHeight - 20);
 
-
-      if (newScrollTop === lastScrollTop && !reachedBottom) {
+      if (newScrollTop === lastScrollTop) {
            if (!foundNewRows) {
                inactivityCounter++;
                sendStatus(`Прокрутка не змінила позицію та нових рядків не знайдено (${inactivityCounter}/${MAX_INACTIVITY})...`);
+               
+               // Enhanced debugging - if we're stuck, report what dates we found
+               if (inactivityCounter === 3) {
+                   console.log("DEBUG: Last dates found:", debugDatesFound.slice(-5));
+                   console.log("DEBUG: Oldest date found:", debugOldestDate);
+               }
            } else {
                inactivityCounter = 0;
            }
       } else if (reachedBottom) {
-           sendStatus('Досягнуто кінця списку (або висота некоректна).');
-           // Optional: Process final rows one last time if needed (logic was here before)
+           sendStatus('Досягнуто кінця списку транзакцій.', 'success');
            break;
       } else {
            inactivityCounter = 0;
       }
+      
+      // Force break if we've processed too many rows (emergency exit)
+      if (processedRowIndexes.size > 1000) {
+          sendStatus('Досягнуто максимальної кількості оброблених рядків (1000+). Зупинка для уникнення зависання.', 'warning');
+          break;
+      }
   } // End while loop
 
   // --- Final Report ---
+  sendStatus('Крок 3: Завершення аналізу та надсилання звіту...', 'pending');
+
+  // Prepare report data to send back
+  
   sendStatus('Крок 3: Завершення аналізу та надсилання звіту...', 'pending');
 
   // Prepare report data to send back
@@ -460,7 +912,20 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
       totalAmount: matchedTransactions.reduce((sum, tx) => sum + tx.amount, 0),
       transactions: matchedTransactions // Include the actual list
   };
-
+  
+  // Підготовка інформації про період для відображення в модальному вікні
+  let periodInfo = '';
+  if (periodType === 'today') {
+      periodInfo = `Сьогодні (${formatDate(targetStartDate)})`;
+  } else if (periodType === 'yesterday') {
+      periodInfo = `Вчора (${formatDate(targetStartDate)})`;
+  } else {
+      periodInfo = `${formatDate(targetStartDate)} - ${formatDate(targetEndDate)}`;
+  }
+  
+  // Показуємо модальне вікно з результатами
+  showResultsModal(reportData, periodInfo);
+  
   if (reportData.count > 0) {
       const summary = `Знайдено ${reportData.count} транзакцій зняття готівки. Загальна сума: ${reportData.totalAmount.toFixed(2)} ₴.`;
       // Send final success status WITH report data and done:true
@@ -477,7 +942,6 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
       sendStatus('Аналіз періоду завершено (без пошуку зняття готівки).', 'success', true, reportData);
   }
 }
-
 
 // --- Event Listener for messages from popup ---
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
