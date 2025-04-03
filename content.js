@@ -17,6 +17,9 @@ const MAX_WAIT_TIME = 10000; // Максимальний час очікуван
 const HIGHLIGHT_PERIOD_COLOR = 'rgba(144, 238, 144, 0.3)'; // Світло-зелений для періоду
 const HIGHLIGHT_MATCH_COLOR = 'rgba(255, 215, 0, 0.4)'; // Золотистий для збігів зняття готівки
 const HIGHLIGHT_BORDER = '1px solid #00B28E';
+const CLOSE_DIALOG_BUTTON_SELECTOR = '#cypress-close-dialog';
+const DIALOG_SELECTOR = '.MuiDialog-paper';
+
 // Додаємо стилі для модального вікна
 // Функція для створення модального вікна результатів
 function showResultsModal(reportData, periodInfo) {
@@ -679,6 +682,7 @@ async function ensureAllTimeSelected() {
  */
 // Modified scrollAndProcessTransactions function with improved stop logic
 
+// Оновлена функція scrollAndProcessTransactions з підтримкою кліку на транзакції
 async function scrollAndProcessTransactions(periodType, startDate, endDate, findCashWithdrawals, cashWithdrawalText) {
   injectModalStyles();
   sendStatus('Крок 2: Початок прокрутки та аналізу транзакцій...');
@@ -817,6 +821,7 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
                           amount: amount,
                           comment: commentStr,
                           rawDateStr: dateStr,
+                          element: row // Keep reference to row element for clicking
                       };
 
                       const isDuplicate = matchedTransactions.some(existingTx =>
@@ -827,6 +832,9 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
 
                       if (!isDuplicate) {
                           matchedTransactions.push(transactionData);
+                          
+                          // НОВИЙ ФУНКЦІОНАЛ: клік на знайдений запис
+                          await clickTransaction(row);
                       }
                   }
               }
@@ -910,7 +918,11 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
   const reportData = {
       count: matchedTransactions.length,
       totalAmount: matchedTransactions.reduce((sum, tx) => sum + tx.amount, 0),
-      transactions: matchedTransactions // Include the actual list
+      transactions: matchedTransactions.map(tx => {
+          // Remove the reference to DOM element before returning data
+          const { element, ...txData } = tx;
+          return txData;
+      })
   };
   
   // Підготовка інформації про період для відображення в модальному вікні
@@ -941,6 +953,65 @@ async function scrollAndProcessTransactions(periodType, startDate, endDate, find
       // Send final success status with empty report data (as none were searched for) and done:true
       sendStatus('Аналіз періоду завершено (без пошуку зняття готівки).', 'success', true, reportData);
   }
+}
+
+/**
+ * Нова функція для кліку на транзакцію, очікування діалогового вікна та його закриття
+ * @param {Element} rowElement - Елемент рядка транзакції для кліку
+ */
+async function clickTransaction(rowElement) {
+    if (!rowElement) return;
+
+    try {
+        // Відправити статус перед кліком
+        sendStatus(`Знайдено відповідну транзакцію. Клік на запис...`, 'pending');
+        
+        // Симулюємо клік на рядку
+        rowElement.click();
+        
+        // Очікуємо появу діалогового вікна
+        sendStatus(`Очікування відкриття діалогового вікна...`, 'pending');
+        const dialogElement = await waitForElement(DIALOG_SELECTOR, document.body, 5000);
+        
+        if (!dialogElement) {
+            sendStatus(`Помилка: Діалогове вікно не відкрилося після кліку на запис.`, 'error');
+            return;
+        }
+        
+        // Затримка 1 секунда після відкриття вікна для огляду
+        sendStatus(`Діалогове вікно відкрито. Затримка 1 секунда...`, 'pending');
+        await delay(1000); // Затримка 1 секунда
+        
+        // Знайти кнопку закриття
+        sendStatus(`Шукаємо кнопку закриття...`, 'pending');
+        const closeButton = await waitForElement(CLOSE_DIALOG_BUTTON_SELECTOR, dialogElement, 2000);
+        
+        if (!closeButton) {
+            sendStatus(`Помилка: Не знайдено кнопку закриття діалогового вікна.`, 'error');
+            // Спробуємо закрити кліком по оверлею
+            const overlay = document.querySelector('.MuiBackdrop-root');
+            if (overlay) {
+                overlay.click();
+                sendStatus(`Спроба закрити вікно через клік по фону.`, 'warning');
+                await delay(1000); // Затримка 1 секунда після закриття
+            } else {
+                return;
+            }
+        } else {
+            // Клік на кнопку закриття
+            sendStatus(`Закриття діалогового вікна...`, 'pending');
+            closeButton.click();
+            
+            // Затримка 1 секунда після закриття вікна
+            sendStatus(`Вікно закрито. Затримка 1 секунда...`, 'pending');
+            await delay(1000); // Затримка 1 секунда після закриття
+        }
+        
+        sendStatus(`Діалогове вікно оброблено. Продовження аналізу...`, 'success');
+    } catch (error) {
+        sendStatus(`Помилка при обробці кліку на транзакцію: ${error.message}`, 'error');
+        console.error("Деталі помилки при кліку:", error);
+    }
 }
 
 // --- Event Listener for messages from popup ---
